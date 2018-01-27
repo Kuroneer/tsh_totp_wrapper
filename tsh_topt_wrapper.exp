@@ -1,0 +1,114 @@
+#!/usr/bin/expect -f
+
+# ENV VARS:
+#  TSHWRAPPER_SECRET_PATH: Path to the secret file
+#  TSHWRAPPER_TSH_PATH: Path to tsh runnable
+#  TSHWRAPPER_CYPHER: Cypher to use to read the secret file
+#  TSHWRAPPER_OPENSSL_MD: Message digestion algorithm to generate key from password
+#  TSHWRAPPER_SILENT: If this script should report to the user
+
+
+# Vars defaults
+if [info exists env(USER)] {
+    set secret_path /home/$env(USER)/.tsh_otp_secret.aes
+} else {
+    set secret_path .tsh_otp_secret.aes;
+}
+set tsh_path tsh
+set cypher aes-256-cbc;
+set openssl_md sha256
+set silent 0
+
+# Check env vars for overrides
+if [info exists env(TSHWRAPPER_SECRET_PATH)] {
+    set secret_path $env(TSHWRAPPER_SECRET_PATH);
+}
+if [info exists env(TSHWRAPPER_TSH_PATH)] {
+    set tsh_path $env(TSHWRAPPER_TSH_PATH);
+}
+if [info exists env(TSHWRAPPER_CYPHER)] {
+    set cypher $env(TSHWRAPPER_CYPHER);
+}
+if [info exists env(TSHWRAPPER_OPENSSL_MD)] {
+    set openssl_md $env(TSHWRAPPER_OPENSSL_MD);
+}
+if [info exists env(TSHWRAPPER_SILENT)] {
+    set silent $env(TSHWRAPPER_SILENT);
+}
+##############################
+
+
+proc report { message } {
+    global silent;
+    if {!$silent} {
+        send_user $message;
+    }
+}
+
+report "<TSH TOTP Wrapper>\n";
+
+set arguments [lrange $argv 0 end];
+
+set timeout 60
+spawn -noecho $tsh_path {*}$arguments
+set tsh_id $spawn_id;
+expect {
+    -i $tsh_id -re "^Enter password for Teleport user .*:" {
+        stty -echo;
+        report "<Reading the password>\n";
+        expect_user -re "(.*)\n";
+        report "<Captured the password>\n";
+        set pass $expect_out(1,string);
+
+        if { $pass eq "" } {
+            report "<The password is empty, bye!>\n";
+            exit;
+        }
+
+        send -i $tsh_id "$pass\r";
+        log_user 0;
+        spawn -noecho openssl $cypher -d -in $secret_path -md $openssl_md;
+        set openssl_id $spawn_id;
+        expect {
+            -i $openssl_id "^enter $cypher decryption password:" {
+                report "<Using the captured password to open $secret_path (openssl $cypher -md $openssl_md)>\n";
+                send "$pass\r";
+                exp_continue;
+            }
+            -i $openssl_id "\n" {
+                exp_continue;
+            }
+            -i $openssl_id eof {
+                set secret $expect_out(buffer);
+                report "<Captured the secret>\n";
+            }
+        }
+        wait -i $openssl_id;
+        set secret [string trimright $secret \r\n];
+        stty echo ;
+
+        if { $secret eq "" } {
+            report "<The secret is empty, check $secret_path and password, bye!>\n";
+            exit;
+        }
+
+        spawn -noecho oathtool --totp $secret --base32;
+        set oathtool_id $spawn_id;
+        expect {
+            -i $oathtool_id eof {
+                set otp $expect_out(buffer);
+                report "<Expect captured the OTP code>\n";
+            }
+        }
+        wait -i $oathtool_id;
+
+        log_user 1;
+        set otp [string trimright $otp \r\n];
+
+        send -i $tsh_id "$otp\r";
+    }
+    -i $tsh_id -re "."
+}
+
+interact -i $tsh_id
+
