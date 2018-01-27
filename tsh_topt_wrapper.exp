@@ -117,7 +117,7 @@ expect {
         expect {
             -i $oathtool_id eof {
                 set otp $expect_out(buffer);
-                report "<Expect captured the OTP code>\n";
+                report "<Captured the OTP code>\n";
             }
         }
         wait -i $oathtool_id;
