@@ -33,19 +33,23 @@ $ pacman -S oath-toolkit
 ### Secret file
 
 The otp codes are based on a secret that is given to you when you get your account. Usually this secret is a QR code that you can read with your smartphone.  
-This QR has your secret and some other information, such as how often the otp code changes and how many digits it has (currently, this script only supports 30s and 6-digit codes, the default).  
-You need to read the QR and store the secret, and only the secret, in an encrypted file.
-
+This QR has your secret and some other information, such as how often the otp code changes and how many digits it has.  
+You need to read the QR and store the secret in an encrypted file.  
 
 To read it, you can use zbar:
 ```
-$ zbarimg qr.png
+$ zbarimg -q --raw qr.png | openssl aes-256-cbc -e -md sha256 -out secret.aes
 ```
-and encrypt the secret
+don't forget to erase any traces of the qr from your system.
+
+
+This script will decrypt the secret file using the password provided for tsh and try to extract the parameters `secret` `digits` and `period` as if the secret file stored an uri.
+If `secret` or `period` fails, it will use the defaults (6 and 30), if it cannot find `secret`, it will use the whole file as the `secret`.
+
+Uri example:
 ```
-$ openssl aes-256-cbc -e -md sha256 -in secret -out secret.aes
+otpauth://totp/ACME:roadrunner@auth-acme?algorithm=SHA1&digits=6&issuer=ACME&period=30&secret=MYSECRET
 ```
-don't forget to erase any traces of the unencrypted secret from your system.
 
 
 ## Recommended configuration

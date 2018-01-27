@@ -45,6 +45,15 @@ proc report { message } {
     }
 }
 
+proc extract_from_uri { uri key } {
+    set success [regexp "otpauth:.*$key=\(\[^&\]*\)" $uri _unused match];
+    if { $success } {
+        return $match;
+    } else {
+        return "";
+    }
+}
+
 report "<TSH TOTP Wrapper>\n";
 
 set arguments [lrange $argv 0 end];
@@ -75,16 +84,27 @@ expect {
                 send "$pass\r";
                 exp_continue;
             }
-            -i $openssl_id "\n" {
-                exp_continue;
-            }
             -i $openssl_id eof {
-                set secret $expect_out(buffer);
+                set info $expect_out(buffer);
                 report "<Captured the secret>\n";
             }
         }
         wait -i $openssl_id;
-        set secret [string trimright $secret \r\n];
+        set info [string trimright $info \r\n];
+        set info [string trimleft $info \r\n];
+        set digits [extract_from_uri $info "digits"];
+        if { $digits eq "" } {
+            set digits 6;
+        }
+        set period [extract_from_uri $info "period"];
+        if { $period eq "" } {
+            set period 30;
+        }
+        set secret [extract_from_uri $info "secret"];
+        if { $secret eq "" } {
+            report "<Using whole $secret_path as secret>\n";
+            set secret $info;
+        }
         stty echo ;
 
         if { $secret eq "" } {
@@ -92,7 +112,7 @@ expect {
             exit;
         }
 
-        spawn -noecho oathtool --totp $secret --base32;
+        spawn -noecho oathtool --totp $secret --base32 --time-step-size=$period --digits=$digits;
         set oathtool_id $spawn_id;
         expect {
             -i $oathtool_id eof {
