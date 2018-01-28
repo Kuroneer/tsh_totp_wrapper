@@ -24,12 +24,6 @@ $ apt-get install openssl
 $ pacman -S openssl
 ```
 
-[oathtool](http://www.nongnu.org/oath-toolkit/) - Get the otp codes from the secret
-```
-$ apt-get install oathtool
-$ pacman -S oath-toolkit
-```
-
 ### Secret file
 
 The otp codes are based on a secret that is given to you when you get your account. Usually this secret is a QR code that you can read with your smartphone.  
@@ -66,5 +60,5 @@ Now you have a tsh tool that automatically injects the otp codes!
 
 ## License
 
-This project is less than 150 lines long and thus it's released to the public domain.
+This project is less than 170 lines long and thus it's released to the public domain. Check [LICENSE](LICENSE) for more information.
 

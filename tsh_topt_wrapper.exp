@@ -38,9 +38,9 @@ if [info exists env(TSHWRAPPER_SILENT)] {
 ##############################
 
 
-proc report { message } {
+proc report { message { override_silent 0 } } {
     global silent;
-    if {!$silent} {
+    if {$override_silent || !$silent} {
         send_user $message;
     }
 }
@@ -53,6 +53,39 @@ proc extract_from_uri { uri key } {
         return "";
     }
 }
+
+proc get_otp { secret period digits } {
+    # Decode secret in base32 to hex
+    set chan [open "|base32 -d" r+];
+    fconfigure $chan -translation binary -encoding binary;
+    puts -nonewline $chan $secret;
+    flush $chan;
+    chan close $chan write;
+    binary scan [read $chan] H* hex_secret;
+    close $chan;
+
+    # Get time offset as binary
+    set now_binary [binary format W [expr [clock seconds] / $period]];
+
+    # Have openssl calculate the mac
+    set chan [open "|openssl dgst -sha1 -mac HMAC -macopt hexkey:$hex_secret" r+];
+    fconfigure $chan -translation binary -encoding binary;
+    puts -nonewline $chan $now_binary;
+    flush $chan;
+    chan close $chan write;
+    regexp {^.*= ([0-9a-z]*)} [read $chan] _unused mac;
+    close $chan;
+
+    # Get last 4 bits of mac as offset
+    scan [string index $mac end] %x byte_offset;
+
+    # Dynamic truncate and turn into number (need to set the first bit to 0
+    scan [string range $mac [expr $byte_offset * 2] [expr $byte_offset * 2 + 7]] %x dec_mac_truncated;
+    set dec_mac_truncated [expr $dec_mac_truncated & 0x7FFFFFFF];
+    set otp [string range [format "%0*d" $digits $dec_mac_truncated] [expr [string length $dec_mac_truncated] - $digits] end];
+    return $otp;
+}
+
 
 report "<TSH TOTP Wrapper>\n";
 
@@ -80,7 +113,7 @@ expect {
         set openssl_id $spawn_id;
         expect {
             -i $openssl_id "^enter $cypher decryption password:" {
-                report "<Using the captured password to open $secret_path (openssl $cypher -md $openssl_md)>\n";
+                report "<Using the captured password to open $secret_path>\n";
                 send "$pass\r";
                 exp_continue;
             }
@@ -89,7 +122,12 @@ expect {
                 report "<Captured the secret>\n";
             }
         }
-        wait -i $openssl_id;
+        lassign [wait -i $openssl_id] _pid _spawnid os_error_flag exit_code
+        if { $os_error_flag || $exit_code} {
+            report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path -md $openssl_md, bye!>\n" 1;
+            exit;
+        }
+
         set info [string trimright $info \r\n];
         set info [string trimleft $info \r\n];
         set digits [extract_from_uri $info "digits"];
@@ -108,22 +146,12 @@ expect {
         stty echo ;
 
         if { $secret eq "" } {
-            report "<The secret is empty, check $secret_path and password, bye!>\n";
+            report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
             exit;
         }
 
-        spawn -noecho oathtool --totp $secret --base32 --time-step-size=$period --digits=$digits;
-        set oathtool_id $spawn_id;
-        expect {
-            -i $oathtool_id eof {
-                set otp $expect_out(buffer);
-                report "<Captured the OTP code>\n";
-            }
-        }
-        wait -i $oathtool_id;
-
         log_user 1;
-        set otp [string trimright $otp \r\n];
+        set otp [get_otp $secret $period $digits];
 
         send -i $tsh_id "$otp\r";
     }
