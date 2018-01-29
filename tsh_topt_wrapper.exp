@@ -54,15 +54,20 @@ proc extract_from_uri { uri key } {
     }
 }
 
-proc get_otp { secret period digits } {
-    # Decode secret in base32 to hex
+proc base32_bindecode { base32_string } {
     set chan [open "|base32 -d" r+];
     fconfigure $chan -translation binary -encoding binary;
-    puts -nonewline $chan $secret;
+    puts -nonewline $chan $base32_string;
     flush $chan;
     chan close $chan write;
-    binary scan [read $chan] H* hex_secret;
+    set binary_data [read $chan];
     close $chan;
+    return $binary_data;
+}
+
+proc get_otp { secret period digits } {
+    # Decode secret in base32 to hex
+    binary scan [base32_bindecode $secret] H* hex_secret;
 
     # Get time offset as binary
     set now_binary [binary format W [expr [clock seconds] / $period]];
@@ -107,14 +112,13 @@ expect {
             exit;
         }
 
-        send -i $tsh_id "$pass\r";
         log_user 0;
         spawn -noecho openssl $cypher -d -in $secret_path -md $openssl_md;
         set openssl_id $spawn_id;
         expect {
             -i $openssl_id "^enter $cypher decryption password:" {
                 report "<Using the captured password to open $secret_path>\n";
-                send "$pass\r";
+                send -i $openssl_id "$pass\r";
                 exp_continue;
             }
             -i $openssl_id eof {
@@ -150,9 +154,11 @@ expect {
             exit;
         }
 
+        send -i $tsh_id "$pass\r";
         log_user 1;
-        set otp [get_otp $secret $period $digits];
 
+        expect -i $tsh_id "Enter your OTP token:"
+        set otp [get_otp $secret $period $digits];
         send -i $tsh_id "$otp\r";
     }
     -i $tsh_id -re "."
