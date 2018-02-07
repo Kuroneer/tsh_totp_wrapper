@@ -172,5 +172,14 @@ trap {
     stty rows $XZ columns $YZ < $tsh_pty
 } WINCH
 
+# Workaround to columns and rows
+set XZ [stty rows   ]
+set YZ [stty columns]
+send -i $tsh_id " printf '\\033\[8;1;${YZ}t'; printf '\\033\[8;${XZ};${YZ}t'; # Bad wrapping workaround\r"
+log_user 0;
+expect -i $tsh_id " printf"
+log_user 1;
+# End of workaround
+
 interact -i $tsh_id
 
