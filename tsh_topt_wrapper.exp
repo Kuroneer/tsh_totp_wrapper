@@ -99,6 +99,7 @@ set arguments [lrange $argv 0 end];
 set timeout 60
 spawn -noecho $tsh_path {*}$arguments
 set tsh_id $spawn_id;
+set tsh_pty $spawn_out(slave,name)
 expect {
     -i $tsh_id -re "^Enter password for Teleport user .*:" {
         stty -echo;
@@ -163,6 +164,13 @@ expect {
     }
     -i $tsh_id -re "."
 }
+
+# Propagate window size changes to tsh
+trap {
+    set XZ [stty rows   ]
+    set YZ [stty columns]
+    stty rows $XZ columns $YZ < $tsh_pty
+} WINCH
 
 interact -i $tsh_id
 

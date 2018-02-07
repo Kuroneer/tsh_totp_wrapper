@@ -60,5 +60,5 @@ Now you have a tsh tool that automatically injects the otp codes!
 
 ## License
 
-This project is less than 170 lines long and thus it's released to the public domain. Check [LICENSE](LICENSE) for more information.
+This project is less than 200 lines long and thus it's released to the public domain. Check [LICENSE](LICENSE) for more information.
 
