@@ -181,16 +181,11 @@ trap {
     stty rows $XZ columns $YZ < $tsh_pty;
 } WINCH
 
-# Workaround to columns and rows
-set XZ [stty rows   ];
+# Workaround to try to handle bad line wrappping
 set YZ [stty columns];
-set refresh_terminal_command " printf '\\033\[8;1;${YZ}t'; printf '\\033\[8;${XZ};${YZ}t'; clear; # Bad wrapping workaround\r";
-catch { expect {
-    -i $tsh_id \012\033 { send -i $tsh_id $refresh_terminal_command }
-    -i $tsh_id "]0"     { send -i $tsh_id $refresh_terminal_command }
-    -i $tsh_id -re ".." {}
-    -i $tsh_id eof      {}
-} } err
+set XZ [stty rows   ];
+set XZ2 [expr $XZ +1];
+stty rows $XZ2 columns $YZ < $tsh_pty; # Does not work 100% percent of times, but nearly enough
 # End of workaround
 
 catch { interact -i $tsh_id } err
