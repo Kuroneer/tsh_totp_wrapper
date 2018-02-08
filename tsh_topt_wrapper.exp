@@ -161,24 +161,27 @@ expect {
         expect -i $tsh_id "Enter your OTP token:"
         set otp [get_otp $secret $period $digits];
         send -i $tsh_id "$otp\r";
+        expect -i $tsh_id "$otp\r";
     }
-    -i $tsh_id -re "."
+    -i $tsh_id -re ".";
 }
 
 # Propagate window size changes to tsh
 trap {
-    set XZ [stty rows   ]
-    set YZ [stty columns]
-    stty rows $XZ columns $YZ < $tsh_pty
+    set XZ [stty rows   ];
+    set YZ [stty columns];
+    stty rows $XZ columns $YZ < $tsh_pty;
 } WINCH
 
 # Workaround to columns and rows
-set XZ [stty rows   ]
-set YZ [stty columns]
-send -i $tsh_id " printf '\\033\[8;1;${YZ}t'; printf '\\033\[8;${XZ};${YZ}t'; # Bad wrapping workaround\r"
-log_user 0;
-expect -i $tsh_id " printf"
-log_user 1;
+set noflag_arguments [lsearch -not -all -inline $arguments "-*"];
+set ssh_index [lsearch $noflag_arguments "ssh"];
+if {($ssh_index >= 0) && ([llength $noflag_arguments] - $ssh_index < 3)} { # If ssh is present and no command is provided
+    set XZ [stty rows   ];
+    set YZ [stty columns];
+    expect -i $tsh_id -re ".."; # Wait for any two chars
+    send -i $tsh_id " printf '\\033\[8;1;${YZ}t'; printf '\\033\[8;${XZ};${YZ}t'; clear; # Bad wrapping workaround\r";
+}
 # End of workaround
 
 interact -i $tsh_id
