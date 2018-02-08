@@ -114,52 +114,60 @@ expect {
         }
 
         log_user 0;
-        spawn -noecho openssl $cypher -d -in $secret_path -md $openssl_md;
-        set openssl_id $spawn_id;
-        expect {
-            -i $openssl_id "^enter $cypher decryption password:" {
-                report "<Using the captured password to open $secret_path>\n";
-                send -i $openssl_id "$pass\r";
-                exp_continue;
+        if { [file exists $secret_path] } {
+            spawn -noecho openssl $cypher -d -in $secret_path -md $openssl_md;
+            set openssl_id $spawn_id;
+            expect {
+                -i $openssl_id "^enter $cypher decryption password:" {
+                    report "<Using the captured password to open $secret_path>\n";
+                    send -i $openssl_id "$pass\r";
+                    exp_continue;
+                }
+                -i $openssl_id eof {
+                    set info $expect_out(buffer);
+                    report "<Captured the secret>\n";
+                }
             }
-            -i $openssl_id eof {
-                set info $expect_out(buffer);
-                report "<Captured the secret>\n";
+            lassign [wait -i $openssl_id] _pid _spawnid os_error_flag exit_code
+                if { $os_error_flag || $exit_code} {
+                    report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path -md $openssl_md, bye!>\n" 1;
+                    exit;
+                }
+
+            set info [string trimright $info \r\n];
+            set info [string trimleft $info \r\n];
+            set digits [extract_from_uri $info "digits"];
+            if { $digits eq "" } {
+                set digits 6;
             }
-        }
-        lassign [wait -i $openssl_id] _pid _spawnid os_error_flag exit_code
-        if { $os_error_flag || $exit_code} {
-            report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path -md $openssl_md, bye!>\n" 1;
-            exit;
-        }
+            set period [extract_from_uri $info "period"];
+            if { $period eq "" } {
+                set period 30;
+            }
+            set secret [extract_from_uri $info "secret"];
+            if { $secret eq "" } {
+                report "<Using whole $secret_path as secret>\n";
+                set secret $info;
+            }
+            stty echo ;
 
-        set info [string trimright $info \r\n];
-        set info [string trimleft $info \r\n];
-        set digits [extract_from_uri $info "digits"];
-        if { $digits eq "" } {
-            set digits 6;
-        }
-        set period [extract_from_uri $info "period"];
-        if { $period eq "" } {
-            set period 30;
-        }
-        set secret [extract_from_uri $info "secret"];
-        if { $secret eq "" } {
-            report "<Using whole $secret_path as secret>\n";
-            set secret $info;
-        }
-        stty echo ;
-
-        if { $secret eq "" } {
-            report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
-            exit;
+            if { $secret eq "" } {
+                report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
+                exit;
+            }
+            set otp [get_otp $secret $period $digits];
         }
 
         send -i $tsh_id "$pass\r";
         log_user 1;
 
-        expect -i $tsh_id "Enter your OTP token:"
-        set otp [get_otp $secret $period $digits];
+        expect -i $tsh_id "Enter your OTP token:";
+        if { ![info exists otp] } {
+            report "<Reading the OTP token>\n";
+            expect_user -re "(.*)\n";
+            report "<Captured the OTP token>\n";
+            set otp $expect_out(1,string);
+        }
         send -i $tsh_id "$otp\r";
         expect -i $tsh_id "$otp\r";
     }
@@ -177,13 +185,13 @@ trap {
 set XZ [stty rows   ];
 set YZ [stty columns];
 set refresh_terminal_command " printf '\\033\[8;1;${YZ}t'; printf '\\033\[8;${XZ};${YZ}t'; clear; # Bad wrapping workaround\r";
-catch expect {
+catch { expect {
     -i $tsh_id \012\033 { send -i $tsh_id $refresh_terminal_command }
     -i $tsh_id "]0"     { send -i $tsh_id $refresh_terminal_command }
     -i $tsh_id -re ".." {}
     -i $tsh_id eof      {}
-}
+} } err
 # End of workaround
 
-catch interact -i $tsh_id
+catch { interact -i $tsh_id } err
 

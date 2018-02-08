@@ -17,7 +17,7 @@ $ apt-get install expect
 $ pacman -S expect
 ```
 
-[openssl](https://www.openssl.org/) - Store the secret securely
+[openssl](https://www.openssl.org/) - Store the secret securely (Only if using the secret file)
 
 ```
 $ apt-get install openssl
@@ -28,6 +28,9 @@ $ pacman -S openssl
 
 The otp codes are based on a secret that is given to you when you get your account. Usually this secret is a QR code that you can read with your smartphone.  
 This QR has your secret and some other information, such as how often the otp code changes and how many digits it has.  
+If this secret file is available, it will be decrypted, if not, you will be prompted for the OTP code.  
+
+
 You need to read the QR and store the secret in an encrypted file.  
 
 To read it, you can use zbar:
