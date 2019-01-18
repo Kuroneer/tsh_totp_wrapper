@@ -5,6 +5,7 @@
 #  TSHWRAPPER_TSH_PATH: Path to tsh runnable
 #  TSHWRAPPER_CYPHER: Cypher to use to read the secret file
 #  TSHWRAPPER_OPENSSL_MD: Message digestion algorithm to generate key from password
+#  TSHWRAPPER_OPENSSL_OPTION: Message digestion algorithm option
 #  TSHWRAPPER_SILENT: If this script should report to the user
 
 
@@ -16,6 +17,7 @@ if [info exists env(USER)] {
 }
 set tsh_path tsh
 set cypher aes-256-cbc;
+set openssl_md_option -md
 set openssl_md sha256
 set silent 0
 
@@ -28,6 +30,9 @@ if [info exists env(TSHWRAPPER_TSH_PATH)] {
 }
 if [info exists env(TSHWRAPPER_CYPHER)] {
     set cypher $env(TSHWRAPPER_CYPHER);
+}
+if [info exists env(TSHWRAPPER_OPENSSL_MD_OPTION)] {
+    set openssl_md_option $env(TSHWRAPPER_OPENSSL_MD_OPTION);
 }
 if [info exists env(TSHWRAPPER_OPENSSL_MD)] {
     set openssl_md $env(TSHWRAPPER_OPENSSL_MD);
@@ -96,6 +101,12 @@ report "<TSH TOTP Wrapper>\n";
 
 set arguments [lrange $argv 0 end];
 
+set interactive_stdin [dict exists [fconfigure stdin] -mode]
+if (!$interactive_stdin) {
+    overlay $tsh_path {*}$arguments
+    exit
+}
+
 set timeout 60
 spawn -noecho $tsh_path {*}$arguments
 set tsh_id $spawn_id;
@@ -115,7 +126,7 @@ expect {
 
         log_user 0;
         if { [file exists $secret_path] } {
-            spawn -noecho openssl $cypher -d -in $secret_path -md $openssl_md;
+            spawn -noecho openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md;
             set openssl_id $spawn_id;
             expect {
                 -i $openssl_id "^enter $cypher decryption password:" {
@@ -130,7 +141,7 @@ expect {
             }
             lassign [wait -i $openssl_id] _pid _spawnid os_error_flag exit_code
                 if { $os_error_flag || $exit_code} {
-                    report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path -md $openssl_md, bye!>\n" 1;
+                    report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md, bye!>\n" 1;
                     exit;
                 }
 
@@ -188,5 +199,5 @@ set XZ2 [expr $XZ +1];
 stty rows $XZ2 columns $YZ < $tsh_pty; # Does not work 100% percent of times, but nearly enough
 # End of workaround
 
-catch { interact -i $tsh_id } err
+interact -i $tsh_id -o $tsh_id
 
