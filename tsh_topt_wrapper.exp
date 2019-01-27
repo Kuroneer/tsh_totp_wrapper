@@ -21,6 +21,8 @@ set openssl_md_option -md
 set openssl_md sha256
 set silent 0
 
+set env(DISPLAY) ""
+
 # Check env vars for overrides
 if [info exists env(TSHWRAPPER_SECRET_PATH)] {
     set secret_path $env(TSHWRAPPER_SECRET_PATH);
@@ -42,6 +44,24 @@ if [info exists env(TSHWRAPPER_SILENT)] {
 }
 ##############################
 
+proc ask_pass { { prompt 0 } } {
+    stty -echo;
+    report "<Reading the password>\n";
+    if { $prompt } {
+        report "Input the password:\n" 1;
+    }
+    expect_user -re "(.*)\n";
+    report "<Captured the password>\n";
+    set pass $expect_out(1,string);
+    stty echo ;
+
+    if { $pass eq "" } {
+        report "<The password is empty, bye!>\n";
+        exit;
+    }
+
+    return $pass
+}
 
 proc report { message { override_silent 0 } } {
     global silent;
@@ -96,8 +116,60 @@ proc get_otp { secret period digits } {
     return $otp;
 }
 
+proc open_otp { pass } {
+    global secret_path
+    global cypher
+    global openssl_md_option
+    global openssl_md
 
-report "<TSH TOTP Wrapper>\n";
+    if { [file exists $secret_path] } {
+        log_user 0;
+        spawn -noecho openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md;
+        expect {
+            "^enter $cypher decryption password:" {
+                report "<Using the captured password to open $secret_path>\n";
+                send "$pass\r";
+                exp_continue;
+            }
+            eof {
+                set info $expect_out(buffer);
+                report "<Captured the secret>\n";
+            }
+        }
+        lassign [wait] _pid _spawnid os_error_flag exit_code
+        if { $os_error_flag || $exit_code} {
+            report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md, bye!>\n" 1;
+            exit;
+        }
+
+        set info [string trimright $info \r\n];
+        set info [string trimleft $info \r\n];
+        set digits [extract_from_uri $info "digits"];
+        if { $digits eq "" } {
+            set digits 6;
+        }
+        set period [extract_from_uri $info "period"];
+        if { $period eq "" } {
+            set period 30;
+        }
+        set secret [extract_from_uri $info "secret"];
+        if { $secret eq "" } {
+            report "<Using whole $secret_path as secret>\n";
+            set secret $info;
+        }
+
+        if { $secret eq "" } {
+            report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
+            exit;
+        }
+        set otp [get_otp $secret $period $digits];
+        log_user 1;
+
+        return "$otp"
+    }
+}
+
+report "<TSH TOTP Wrapper for $tsh_path>\n";
 
 set arguments [lrange $argv 0 end];
 
@@ -113,67 +185,18 @@ set tsh_id $spawn_id;
 set tsh_pty $spawn_out(slave,name)
 expect {
     -i $tsh_id -re "^Enter password for Teleport user .*:" {
-        stty -echo;
-        report "<Reading the password>\n";
-        expect_user -re "(.*)\n";
-        report "<Captured the password>\n";
-        set pass $expect_out(1,string);
+        # Version 2.x
 
-        if { $pass eq "" } {
-            report "<The password is empty, bye!>\n";
-            exit;
-        }
+        set pass [ask_pass]
+        set otp [open_otp $pass];
 
         log_user 0;
-        if { [file exists $secret_path] } {
-            spawn -noecho openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md;
-            set openssl_id $spawn_id;
-            expect {
-                -i $openssl_id "^enter $cypher decryption password:" {
-                    report "<Using the captured password to open $secret_path>\n";
-                    send -i $openssl_id "$pass\r";
-                    exp_continue;
-                }
-                -i $openssl_id eof {
-                    set info $expect_out(buffer);
-                    report "<Captured the secret>\n";
-                }
-            }
-            lassign [wait -i $openssl_id] _pid _spawnid os_error_flag exit_code
-                if { $os_error_flag || $exit_code} {
-                    report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md, bye!>\n" 1;
-                    exit;
-                }
-
-            set info [string trimright $info \r\n];
-            set info [string trimleft $info \r\n];
-            set digits [extract_from_uri $info "digits"];
-            if { $digits eq "" } {
-                set digits 6;
-            }
-            set period [extract_from_uri $info "period"];
-            if { $period eq "" } {
-                set period 30;
-            }
-            set secret [extract_from_uri $info "secret"];
-            if { $secret eq "" } {
-                report "<Using whole $secret_path as secret>\n";
-                set secret $info;
-            }
-            stty echo ;
-
-            if { $secret eq "" } {
-                report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
-                exit;
-            }
-            set otp [get_otp $secret $period $digits];
-        }
-
         send -i $tsh_id "$pass\r";
+        unset pass
         log_user 1;
 
         expect -i $tsh_id "Enter your OTP token:";
-        if { ![info exists otp] } {
+        if { $otp eq "" } {
             report "<Reading the OTP token>\n";
             expect_user -re "(.*)\n";
             report "<Captured the OTP token>\n";
@@ -181,6 +204,171 @@ expect {
         }
         send -i $tsh_id "$otp\r";
         expect -i $tsh_id "$otp\r";
+    }
+    -i $tsh_id "^If browser window does not open automatically, open it by clicking on the link:" {
+        # Version 3.x
+
+        # Careful, if --user is in the parameters, you get prompted to log in
+        # again
+
+        report "<URL incoming...>\n";
+        expect -i $tsh_id -re " (http://\[^\[:space:\]\]+)"
+        set localurl $expect_out(1,string);
+
+        if {! [info exists localurl]} {
+            report "<Cannot find local url>\n" 1;
+            exit;
+        }
+        report "<Local url is $localurl>\n";
+
+
+        log_user 0;
+        spawn -noecho curl -I $localurl;
+        expect {
+            -re "Location: (\[^\[:space:\]\]+)" {
+                set login_page $expect_out(1,string)
+                exp_continue;
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists login_page]} {
+            report "<Cannot find login page>\n" 1;
+            exit;
+        }
+        report "<Login page is $login_page>\n";
+
+
+        log_user 0;
+        set cookies {}
+        spawn -noecho curl -i $login_page;
+        expect {
+            -re ".*kc-form-login.*action=\"(\[^\[:space:\]\]+)\".*" {
+                set action $expect_out(1,string)
+                regsub -all "&amp;" "$action" "\\&" action
+                exp_continue;
+            }
+            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                lappend cookies "-H"
+                lappend cookies "Cookie: $expect_out(1,string)"
+                exp_continue;
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists action]} {
+            report "<Cannot find pass action>\n" 1;
+            exit;
+        }
+        report "<Pass action is $action>\n";
+
+
+        set pass [ask_pass 1]
+
+
+        log_user 0;
+        spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$env(USER)" --data-urlencode password@-
+        send "$pass";
+        unset action
+        send [format "%c%c%c" 4 4 4]
+        expect {
+            -re ".*kc-totp-login-form.*action=\"(\[^\[:space:\]\]+)\".*" {
+                set action $expect_out(1,string)
+                regsub -all "&amp;" "$action" "\\&" action
+                exp_continue;
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists action]} {
+            report "<Cannot find OTP action, password was correct?>\n" 1;
+            exit;
+        }
+        report "<OTP action is $action>\n";
+
+
+        set otp [open_otp $pass];
+        unset pass
+        if { $otp eq "" } {
+            report "Input the totp:\n" 1;
+            expect_user -re "(.*)\n";
+            set otp "$expect_out(1,string)"
+        }
+
+
+        log_user 0;
+        spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "totp=$otp"
+        expect {
+            -re "Location: (\[^\[:space:\]\]+)" {
+                set location $expect_out(1,string)
+                exp_continue;
+            }
+            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                lappend cookies "-H"
+                lappend cookies "Cookie: $expect_out(1,string)"
+                exp_continue;
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists location]} {
+            report "<Cannot find logged-in location, OTP was correct?>\n" 1;
+            exit;
+        }
+        report "<Logged-in page is $location>\n";
+
+
+        log_user 0;
+        spawn -noecho curl -i -s $location {*}$cookies
+        match_max -i $spawn_id 65500
+        expect {
+            -re "<a href=\"(\[^\[:space:\]\]+)\">Found</a>" {
+                set callback $expect_out(1,string)
+                regsub -all "&amp;" "$callback" "\\&" callback
+                exp_continue;
+            }
+            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                lappend cookies "-H"
+                lappend cookies "Cookie: $expect_out(1,string)"
+                exp_continue;
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists callback]} {
+            report "<Cannot find callback>\n" 1;
+            exit;
+        }
+        report "<Callback is $callback>\n";
+
+
+        log_user 0;
+        spawn -noecho curl -i -s "$callback" {*}$cookies
+        expect {
+            -re "login_success" {
+                set success 1
+            }
+            eof
+        }
+        wait
+        log_user 1;
+
+        if {! [info exists success]} {
+            report "<Something went wrong, sorry>\n" 1;
+            exit;
+        }
+        report "<Finished login>\n";
+
     }
     -i $tsh_id -re ".";
 }
@@ -193,6 +381,7 @@ trap {
 } WINCH
 
 # Workaround to try to handle bad line wrappping
+# TODO - Not needed for TSH v3.X, delete after 2.X is no longer used
 set YZ [stty columns];
 set XZ [stty rows   ];
 set XZ2 [expr $XZ +1];
