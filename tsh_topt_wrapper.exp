@@ -116,7 +116,7 @@ proc get_otp { secret period digits } {
     return $otp;
 }
 
-proc open_otp { pass } {
+proc open_otp { pass { times 0 } } {
     global secret_path
     global cypher
     global openssl_md_option
@@ -138,8 +138,14 @@ proc open_otp { pass } {
         }
         lassign [wait] _pid _spawnid os_error_flag exit_code
         if { $os_error_flag || $exit_code} {
-            report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md, bye!>\n" 1;
-            exit;
+            if { $times > 0 } {
+                report "<The secret was badly decrypted, check $> openssl $cypher -d -in $secret_path $openssl_md_option $openssl_md, bye!>\n" 1;
+                exit;
+            } else {
+                report "Unlocking OTP code...\n" 1;
+                set pass [ask_pass 1]
+                return [open_otp $pass 1];
+            }
         }
 
         set info [string trimright $info \r\n];
@@ -204,6 +210,13 @@ expect {
         }
         send -i $tsh_id "$otp\r";
         expect -i $tsh_id "$otp\r";
+
+        # Workaround to try to handle bad line wrappping
+        set YZ [stty columns];
+        set XZ [stty rows   ];
+        set XZ2 [expr $XZ +1];
+        stty rows $XZ2 columns $YZ < $tsh_pty; # Does not work 100% percent of times, but nearly enough
+        # End of workaround
     }
     -i $tsh_id "^If browser window does not open automatically, open it by clicking on the link:" {
         # Version 3.x
@@ -379,14 +392,6 @@ trap {
     set YZ [stty columns];
     stty rows $XZ columns $YZ < $tsh_pty;
 } WINCH
-
-# Workaround to try to handle bad line wrappping
-# TODO - Not needed for TSH v3.X, delete after 2.X is no longer used
-set YZ [stty columns];
-set XZ [stty rows   ];
-set XZ2 [expr $XZ +1];
-stty rows $XZ2 columns $YZ < $tsh_pty; # Does not work 100% percent of times, but nearly enough
-# End of workaround
 
 interact -i $tsh_id -o $tsh_id
 
