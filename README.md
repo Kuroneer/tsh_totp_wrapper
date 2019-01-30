@@ -57,11 +57,17 @@ Set `TSHWRAPPER_TSH_PATH` to your runnable tsh tool
 Have this script in your path with the name "tsh" (soft link, copy in ~/bin...)  
 Now you have a tsh tool that automatically injects the otp codes!  
 
+If you have other wrappers over tsh that output lines that begin with `* `, `ERRO` or
+`WARN`, you can have this script ignore them setting the following env var:  
+```
+TSHWRAPPER_IGNORE_FIRST_LINES="WARN.*\n|ERRO.*\n|\\*.*\n"
+```
+
 ## Authors
 
 * **Jose M Perez Ramos** - [Kuroneer](https://github.com/Kuroneer)
 
 ## License
 
-This project is less than 200 lines long and thus it's released to the public domain. Check [LICENSE](LICENSE) for more information.
+This project is ~400 lines long and thus it's released to the public domain. Check [LICENSE](LICENSE) for more information.
 

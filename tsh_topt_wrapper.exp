@@ -7,6 +7,7 @@
 #  TSHWRAPPER_OPENSSL_MD: Message digestion algorithm to generate key from password
 #  TSHWRAPPER_OPENSSL_OPTION: Message digestion algorithm option
 #  TSHWRAPPER_SILENT: If this script should report to the user
+#  TSHWRAPPER_IGNORE_FIRST_LINES: Regex to ignore lines before tsh starts
 
 
 # Vars defaults
@@ -189,6 +190,11 @@ set timeout 60
 spawn -noecho $tsh_path {*}$arguments
 set tsh_id $spawn_id;
 set tsh_pty $spawn_out(slave,name)
+
+if [info exists env(TSHWRAPPER_IGNORE_FIRST_LINES)] {
+    expect_before -i $tsh_id -re "$env(TSHWRAPPER_IGNORE_FIRST_LINES)" exp_continue;
+}
+
 expect {
     -i $tsh_id -re "^Enter password for Teleport user .*:" {
         # Version 2.x
@@ -385,6 +391,7 @@ expect {
     }
     -i $tsh_id -re ".";
 }
+report "<Passthrough mode...>\n";
 
 # Propagate window size changes to tsh
 trap {
