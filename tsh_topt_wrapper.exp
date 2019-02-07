@@ -43,9 +43,26 @@ if [info exists env(TSHWRAPPER_OPENSSL_MD)] {
 if [info exists env(TSHWRAPPER_SILENT)] {
     set silent $env(TSHWRAPPER_SILENT);
 }
+
+proc report { message { override_silent 0 } } {
+    global silent;
+    if {$override_silent || !$silent} {
+        send_user $message;
+    }
+}
+
+if [info exists env(TSHWRAPPER_PASSWORD_PLAIN)] {
+    report "<WARNING: Fetching password non interactively\n" 1;
+    set env_password_plain $env(TSHWRAPPER_PASSWORD_PLAIN);
+}
 ##############################
 
 proc ask_pass { { prompt 0 } } {
+    global env_password_plain
+    if [info exists env_password_plain] {
+        return $env_password_plain
+    }
+
     stty -echo;
     report "<Reading the password>\n";
     if { $prompt } {
@@ -62,13 +79,6 @@ proc ask_pass { { prompt 0 } } {
     }
 
     return $pass
-}
-
-proc report { message { override_silent 0 } } {
-    global silent;
-    if {$override_silent || !$silent} {
-        send_user $message;
-    }
 }
 
 proc extract_from_uri { uri key } {
@@ -181,7 +191,8 @@ report "<TSH TOTP Wrapper for $tsh_path>\n";
 set arguments [lrange $argv 0 end];
 
 set interactive_stdin [dict exists [fconfigure stdin] -mode]
-if (!$interactive_stdin) {
+set password_exists [info exists env_password_plain]
+if { !$interactive_stdin && !$password_exists } {
     overlay $tsh_path {*}$arguments
     exit
 }
