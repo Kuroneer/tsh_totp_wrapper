@@ -318,6 +318,8 @@ expect {
             report "Input the totp:\n" 1;
             expect_user -re "(.*)\n";
             set otp "$expect_out(1,string)"
+        } else {
+            report "Generated TOTP is $otp\n" 1;
         }
 
 
