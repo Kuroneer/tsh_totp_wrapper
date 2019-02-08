@@ -43,6 +43,9 @@ if [info exists env(TSHWRAPPER_OPENSSL_MD)] {
 if [info exists env(TSHWRAPPER_SILENT)] {
     set silent $env(TSHWRAPPER_SILENT);
 }
+if [info exists env(TSHWRAPPER_COOKIEJAR_PATH)] {
+    set cookiejar_path $env(TSHWRAPPER_COOKIEJAR_PATH);
+}
 
 proc report { message { override_silent 0 } } {
     global silent;
@@ -250,10 +253,22 @@ expect {
             exit;
         }
         report "<Local url is $localurl>\n";
+        report "\n" 1;
 
 
         log_user 0;
-        spawn -noecho curl -I $localurl;
+        set cookies {}
+        if [info exists cookiejar_path] {
+            if {! [file exists $cookiejar_path] } {
+                close [open "$cookiejar_path" w]
+            }
+            exec chmod 0600 "$cookiejar_path"
+            lappend cookies "--cookie"
+            lappend cookies "$cookiejar_path"
+            lappend cookies "--cookie-jar"
+            lappend cookies "$cookiejar_path"
+        }
+        spawn -noecho curl -I {*}$cookies $localurl;
         expect {
             -re "Location: (\[^\[:space:\]\]+)" {
                 set login_page $expect_out(1,string)
@@ -272,78 +287,22 @@ expect {
 
 
         log_user 0;
-        set cookies {}
-        spawn -noecho curl -i $login_page;
+        spawn -noecho curl -i {*}$cookies $login_page;
+        if {! [info exists cookiejar_path] } {
+            expect_before -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                lappend cookies "-H"
+                lappend cookies "Cookie: $expect_out(1,string)"
+                exp_continue;
+            }
+        }
         expect {
             -re ".*kc-form-login.*action=\"(\[^\[:space:\]\]+)\".*" {
                 set action $expect_out(1,string)
                 regsub -all "&amp;" "$action" "\\&" action
                 exp_continue;
             }
-            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
-                lappend cookies "-H"
-                lappend cookies "Cookie: $expect_out(1,string)"
-                exp_continue;
-            }
-            eof
-        }
-        wait
-        log_user 1;
-
-        if {! [info exists action]} {
-            report "<Cannot find pass action>\n" 1;
-            exit;
-        }
-        report "<Pass action is $action>\n";
-
-
-        set pass [ask_pass 1]
-
-
-        log_user 0;
-        spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$env(USER)" --data-urlencode password@-
-        send "$pass";
-        unset action
-        send [format "%c%c%c" 4 4 4]
-        expect {
-            -re ".*kc-totp-login-form.*action=\"(\[^\[:space:\]\]+)\".*" {
-                set action $expect_out(1,string)
-                regsub -all "&amp;" "$action" "\\&" action
-                exp_continue;
-            }
-            eof
-        }
-        wait
-        log_user 1;
-
-        if {! [info exists action]} {
-            report "<Cannot find OTP action, password was correct?>\n" 1;
-            exit;
-        }
-        report "<OTP action is $action>\n";
-
-
-        set otp [open_otp $pass];
-        unset pass
-        if { $otp eq "" } {
-            report "Input the totp:\n" 1;
-            expect_user -re "(.*)\n";
-            set otp "$expect_out(1,string)"
-        } else {
-            report "Generated TOTP is $otp\n" 1;
-        }
-
-
-        log_user 0;
-        spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "totp=$otp"
-        expect {
             -re "Location: (\[^\[:space:\]\]+)" {
                 set location $expect_out(1,string)
-                exp_continue;
-            }
-            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
-                lappend cookies "-H"
-                lappend cookies "Cookie: $expect_out(1,string)"
                 exp_continue;
             }
             eof
@@ -352,24 +311,93 @@ expect {
         log_user 1;
 
         if {! [info exists location]} {
-            report "<Cannot find logged-in location, OTP was correct?>\n" 1;
-            exit;
+            if {! [info exists action]} {
+                report "<Cannot find pass action>\n" 1;
+                exit;
+            }
+            report "<Pass action is $action>\n";
+
+
+            set pass [ask_pass 1]
+
+
+            log_user 0;
+            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$env(USER)" --data-urlencode password@-
+            send "$pass";
+            unset action
+            send [format "%c%c%c" 4 4 4]
+            expect {
+                -re ".*kc-totp-login-form.*action=\"(\[^\[:space:\]\]+)\".*" {
+                    set action $expect_out(1,string)
+                    regsub -all "&amp;" "$action" "\\&" action
+                    exp_continue;
+                }
+                eof
+            }
+            wait
+            log_user 1;
+
+            if {! [info exists action]} {
+                report "<Cannot find OTP action, password was correct?>\n" 1;
+                exit;
+            }
+            report "<OTP action is $action>\n";
+
+
+            set otp [open_otp $pass];
+            unset pass
+            if { $otp eq "" } {
+                report "Input the totp:\n" 1;
+                expect_user -re "(.*)\n";
+                set otp "$expect_out(1,string)"
+            } else {
+                report "Generated TOTP is $otp\n" 1;
+            }
+
+
+            log_user 0;
+            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "totp=$otp"
+            if {! [info exists cookiejar_path] } {
+                expect_before -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                    lappend cookies "-H"
+                    lappend cookies "Cookie: $expect_out(1,string)"
+                    exp_continue;
+                }
+            }
+            expect {
+                -re "Location: (\[^\[:space:\]\]+)" {
+                    set location $expect_out(1,string)
+                    exp_continue;
+                }
+                eof
+            }
+            wait
+            log_user 1;
+
+            if {! [info exists location]} {
+                report "<Cannot find logged-in location, OTP was correct?>\n" 1;
+                exit;
+            }
+        } else {
+            report "<Using cookies>\n" 1;
         }
         report "<Logged-in page is $location>\n";
 
 
         log_user 0;
         spawn -noecho curl -i -s $location {*}$cookies
+        if {! [info exists cookiejar_path] } {
+            expect_before -re "Set-Cookie: (\[^\[:space:\];\]+)" {
+                lappend cookies "-H"
+                lappend cookies "Cookie: $expect_out(1,string)"
+                exp_continue;
+            }
+        }
         match_max -i $spawn_id 65500
         expect {
             -re "<a href=\"(\[^\[:space:\]\]+)\">Found</a>" {
                 set callback $expect_out(1,string)
                 regsub -all "&amp;" "$callback" "\\&" callback
-                exp_continue;
-            }
-            -re "Set-Cookie: (\[^\[:space:\];\]+)" {
-                lappend cookies "-H"
-                lappend cookies "Cookie: $expect_out(1,string)"
                 exp_continue;
             }
             eof
@@ -413,5 +441,5 @@ trap {
     stty rows $XZ columns $YZ < $tsh_pty;
 } WINCH
 
-interact -i $tsh_id -o $tsh_id
+catch { interact -i $tsh_id -o $tsh_id }
 
