@@ -177,16 +177,25 @@ proc open_otp { pass { times 0 } } {
             report "<Using whole $secret_path as secret>\n";
             set secret $info;
         }
-
         if { $secret eq "" } {
             report "<The secret is empty, check $secret_path and password, bye!>\n" 1;
             exit;
         }
         set otp [get_otp $secret $period $digits];
+
+        set pass_override [extract_from_uri $info "password"];
         log_user 1;
 
-        return "$otp"
+        return [list "$otp" "$pass_override"]
     }
+}
+
+proc open_otp_with_password { pass } {
+    lassign [open_otp $pass] otp pass_override;
+    if { $pass_override ne "" } {
+        set pass $pass_override
+    }
+    return [list "$otp" "$pass"]
 }
 
 report "<TSH TOTP Wrapper for $tsh_path>\n";
@@ -214,7 +223,7 @@ expect {
         # Version 2.x
 
         set pass [ask_pass]
-        set otp [open_otp $pass];
+        lassign [open_otp_with_password $pass] otp pass;
 
         log_user 0;
         send -i $tsh_id "$pass\r";
@@ -317,9 +326,8 @@ expect {
             }
             report "<Pass action is $action>\n";
 
-
             set pass [ask_pass 1]
-
+            lassign [open_otp_with_password $pass] otp pass;
 
             log_user 0;
             spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$env(USER)" --data-urlencode password@-
@@ -343,8 +351,6 @@ expect {
             }
             report "<OTP action is $action>\n";
 
-
-            set otp [open_otp $pass];
             unset pass
             if { $otp eq "" } {
                 report "Input the totp:\n" 1;
