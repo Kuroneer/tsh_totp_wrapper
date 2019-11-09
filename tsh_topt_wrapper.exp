@@ -54,6 +54,14 @@ proc report { message { override_silent 0 } } {
     }
 }
 
+set userflag_position [lsearch -exact $argv "--user"]
+if {$userflag_position >= 0} {
+    set user [lindex $argv [expr $userflag_position + 1]]
+    report "<User overriden to $user>\n";
+} else {
+    set user $env(USER);
+}
+
 if [info exists env(TSHWRAPPER_PASSWORD_PLAIN)] {
     report "<WARNING: Fetching password non interactively\n" 1;
     set env_password_plain $env(TSHWRAPPER_PASSWORD_PLAIN);
@@ -279,7 +287,7 @@ expect {
         }
         spawn -noecho curl -I {*}$cookies $localurl;
         expect {
-            -re "Location: (\[^\[:space:\]\]+)" {
+            -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
                 set login_page $expect_out(1,string)
                 exp_continue;
             }
@@ -293,7 +301,6 @@ expect {
             exit;
         }
         report "<Login page is $login_page>\n";
-
 
         log_user 0;
         spawn -noecho curl -i {*}$cookies $login_page;
@@ -310,7 +317,7 @@ expect {
                 regsub -all "&amp;" "$action" "\\&" action
                 exp_continue;
             }
-            -re "Location: (\[^\[:space:\]\]+)" {
+            -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
                 set location $expect_out(1,string)
                 exp_continue;
             }
@@ -330,7 +337,7 @@ expect {
             lassign [open_otp_with_password $pass] otp pass;
 
             log_user 0;
-            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$env(USER)" --data-urlencode password@-
+            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$user" --data-urlencode password@-
             send "$pass";
             unset action
             send [format "%c%c%c" 4 4 4]
@@ -346,7 +353,7 @@ expect {
             log_user 1;
 
             if {! [info exists action]} {
-                report "<Cannot find OTP action, password was correct?>\n" 1;
+                report "<Cannot find OTP action, user+password were correct?>\n" 1;
                 exit;
             }
             report "<OTP action is $action>\n";
@@ -371,7 +378,7 @@ expect {
                 }
             }
             expect {
-                -re "Location: (\[^\[:space:\]\]+)" {
+                -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
                     set location $expect_out(1,string)
                     exp_continue;
                 }
