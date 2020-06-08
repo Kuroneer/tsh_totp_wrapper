@@ -337,13 +337,15 @@ expect {
             lassign [open_otp_with_password $pass] otp pass;
 
             log_user 0;
+
             spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "username=$user" --data-urlencode password@-
             send "$pass";
             unset action
             send [format "%c%c%c" 4 4 4]
             expect {
-                -re ".*kc-totp-login-form.*action=\"(\[^\[:space:\]\]+)\".*" {
-                    set action $expect_out(1,string)
+                -re ".*kc-(t?otp)-login.*action=\"(\[^\[:space:\]\]+)\".*" {
+                    set otpkey $expect_out(1,string)
+                    set action $expect_out(2,string)
                     regsub -all "&amp;" "$action" "\\&" action
                     exp_continue;
                 }
@@ -369,7 +371,7 @@ expect {
 
 
             log_user 0;
-            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "totp=$otp"
+            spawn -noecho curl -i -s $action {*}$cookies --data-urlencode "$otpkey=$otp"
             if {! [info exists cookiejar_path] } {
                 expect_before -re "Set-Cookie: (\[^\[:space:\];\]+)" {
                     lappend cookies "-H"
