@@ -287,7 +287,7 @@ expect {
         }
         spawn -noecho curl -I {*}$cookies $localurl;
         expect {
-            -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
+            -re "\[Ll\]ocation\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
                 set login_page $expect_out(1,string)
                 exp_continue;
             }
@@ -317,7 +317,7 @@ expect {
                 regsub -all "&amp;" "$action" "\\&" action
                 exp_continue;
             }
-            -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
+            -re "\[Ll\]ocation\[^\[:space:\]\]*: (https?://\[^\[:space:\]\]+)" {
                 set location $expect_out(1,string)
                 exp_continue;
             }
@@ -380,7 +380,7 @@ expect {
                 }
             }
             expect {
-                -re "Location\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
+                -re "\[Ll\]ocation\[^\[:space:\]\]*: (https?://\[^\[:space:\]\]+)" {
                     set location $expect_out(1,string)
                     exp_continue;
                 }
