@@ -285,6 +285,7 @@ expect {
             lappend cookies "--cookie-jar"
             lappend cookies "$cookiejar_path"
         }
+        sleep .100
         spawn -noecho curl -I {*}$cookies $localurl;
         expect {
             -re "\[Ll\]ocation\[^\[:space:\]\]*: (https://\[^\[:space:\]\]+)" {
